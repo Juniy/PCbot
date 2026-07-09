@@ -23,6 +23,8 @@ import { HttpApiServer } from "./server/http-api"
 import { DiagnosticEngine } from "./engine/diagnostics"
 import { TaskDecomposer } from "./engine/decomposer"
 import { ResultValidator } from "./engine/validator"
+import { Notifier } from "./monitor/notifier"
+import { MetricsCollector } from "./monitor/metrics"
 import type { ChannelMessage } from "./types"
 
 const logger = new Logger("main")
@@ -54,6 +56,8 @@ export class Pcbot {
   private diagnosticEngine!: DiagnosticEngine
   private taskDecomposer!: TaskDecomposer
   private resultValidator!: ResultValidator
+  private notifier!: Notifier
+  private metrics!: MetricsCollector
   private startTime = 0
   private running = false
   private options: PcbotOptions
@@ -85,6 +89,8 @@ export class Pcbot {
     this.diagnosticEngine = new DiagnosticEngine(this.client, this.taskStore)
     this.taskDecomposer = new TaskDecomposer(this.client, this.taskStore, this.taskExecutor)
     this.resultValidator = new ResultValidator(this.client)
+    this.notifier = new Notifier(this.channelManager)
+    this.metrics = new MetricsCollector(this.taskStore, this.healthMonitor)
   }
 
   async start(): Promise<void> {
@@ -133,7 +139,22 @@ export class Pcbot {
     // 5. Start scheduler
     this.taskScheduler.start()
 
-    // 6. Start health monitor
+    // 6. Wire up task event listeners (notifier + metrics)
+    this.taskExecutor.onEvent(({ type, exec, task }) => {
+      if (type === "complete" || type === "fail") {
+        this.metrics.recordTaskComplete(
+          exec.completedAt && exec.startedAt
+            ? new Date(exec.completedAt).getTime() - new Date(exec.startedAt).getTime()
+            : 0,
+          type === "complete",
+        )
+        if (task) {
+          this.notifier.notifyTaskComplete(exec, task).catch(() => {})
+        }
+      }
+    })
+
+    // 7. Start health monitor
     this.healthMonitor.start()
 
     // 7. Start evolution engine
@@ -143,6 +164,21 @@ export class Pcbot {
     this.diagnosticEngine.setEnabled(true)
     this.taskDecomposer.setEnabled(true)
     this.resultValidator.setEnabled(true)
+
+    // 9. Start metrics collection and hourly snapshots (Phase 4)
+    setInterval(() => {
+      this.metrics.snapshot()
+    }, 3_600_000) // Every hour
+
+    // 10. Send daily summary
+    setInterval(() => {
+      const agg = this.metrics.getAggregate()
+      this.notifier.sendDailySummary(
+        agg.tasksCompleted,
+        agg.tasksFailed,
+        this.uptime,
+      ).catch(() => {})
+    }, 86_400_000) // Every 24h
 
     logger.info("=== PCbot Started ===")
     this.printStatus()
@@ -235,6 +271,8 @@ export class Pcbot {
   getDiagnosticEngine(): DiagnosticEngine { return this.diagnosticEngine }
   getTaskDecomposer(): TaskDecomposer { return this.taskDecomposer }
   getResultValidator(): ResultValidator { return this.resultValidator }
+  getNotifier(): Notifier { return this.notifier }
+  getMetrics(): MetricsCollector { return this.metrics }
 }
 
 // ===== CLI Entry =====

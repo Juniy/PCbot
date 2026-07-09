@@ -4,6 +4,7 @@ import { TaskStore } from "../engine/store"
 import { TaskExecutor } from "../engine/executor"
 import { TaskRouter } from "../engine/router"
 import { EvolutionEngine } from "../engine/evolution"
+import { MetricsCollector } from "../monitor/metrics"
 import { HealthMonitor } from "../monitor"
 import { ServerManager } from "./manager"
 import { ChannelManager } from "../channels"
@@ -37,6 +38,7 @@ export class HttpApiServer {
     private healthMonitor: HealthMonitor,
     private serverManager: ServerManager,
     private channelManager: ChannelManager,
+    private metrics?: MetricsCollector,
     port = 8081,
   ) {
     this.port = port
@@ -142,6 +144,14 @@ export class HttpApiServer {
         await this.json(res, 200, {
           metrics: this.evolution.getMetrics(),
           summary: this.evolution.getSummary(),
+        })
+        return
+      }
+
+      if (path === "/api/metrics" && method === "GET") {
+        await this.json(res, 200, {
+          aggregate: this.metrics?.getAggregate() ?? null,
+          summary: this.metrics?.getSummary() ?? "Metrics not available",
         })
         return
       }

@@ -5,16 +5,29 @@ import { TaskStore } from "./store"
 import type { TaskDefinition, TaskExecution, TaskStep, StepResult, TaskStatus } from "../types"
 import { getConfig } from "../config"
 
+export type TaskEventCallback = (event: { type: "start" | "complete" | "fail"; exec: TaskExecution; task?: TaskDefinition }) => void
+
 export class TaskExecutor {
   private client: OpenCodeClient
   private store: TaskStore
   private logger = new Logger("task-executor")
   private runningTasks = new Set<string>()
   private abortController = new AbortController()
+  private listeners: TaskEventCallback[] = []
 
   constructor(client: OpenCodeClient, store: TaskStore) {
     this.client = client
     this.store = store
+  }
+
+  onEvent(cb: TaskEventCallback): void {
+    this.listeners.push(cb)
+  }
+
+  private emit(event: { type: "start" | "complete" | "fail"; exec: TaskExecution; task?: TaskDefinition }): void {
+    for (const cb of this.listeners) {
+      try { cb(event) } catch { /* ignore listener errors */ }
+    }
   }
 
   get isRunning(): boolean {
@@ -39,6 +52,7 @@ export class TaskExecutor {
 
     this.store.addExecution(execution)
     this.runningTasks.add(execId)
+    this.emit({ type: "start", exec: execution, task })
     this.logger.info(`Starting task "${task.name}" (exec=${execId}, steps=${task.steps.length})`)
 
     try {
@@ -78,6 +92,11 @@ export class TaskExecutor {
         completedAt: execution.completedAt,
         error: execution.error,
         stepResults: execution.stepResults,
+      })
+      this.emit({
+        type: execution.status === "completed" ? "complete" : "fail",
+        exec: execution,
+        task,
       })
       this.runningTasks.delete(execId)
     }
