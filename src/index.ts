@@ -20,6 +20,9 @@ import { WeChatChannel } from "./channels/wechat"
 import { EvolutionEngine } from "./engine/evolution"
 import { TaskRouter } from "./engine/router"
 import { HttpApiServer } from "./server/http-api"
+import { DiagnosticEngine } from "./engine/diagnostics"
+import { TaskDecomposer } from "./engine/decomposer"
+import { ResultValidator } from "./engine/validator"
 import type { ChannelMessage } from "./types"
 
 const logger = new Logger("main")
@@ -48,6 +51,9 @@ export class Pcbot {
   private evolutionEngine: EvolutionEngine
   private taskRouter!: TaskRouter
   private httpApi!: HttpApiServer
+  private diagnosticEngine!: DiagnosticEngine
+  private taskDecomposer!: TaskDecomposer
+  private resultValidator!: ResultValidator
   private startTime = 0
   private running = false
   private options: PcbotOptions
@@ -76,6 +82,9 @@ export class Pcbot {
     this.healthMonitor = new HealthMonitor(this.serverManager, this.client)
     this.channelManager = new ChannelManager()
     this.evolutionEngine = new EvolutionEngine(this.taskStore)
+    this.diagnosticEngine = new DiagnosticEngine(this.client, this.taskStore)
+    this.taskDecomposer = new TaskDecomposer(this.client, this.taskStore, this.taskExecutor)
+    this.resultValidator = new ResultValidator(this.client)
   }
 
   async start(): Promise<void> {
@@ -129,6 +138,11 @@ export class Pcbot {
 
     // 7. Start evolution engine
     this.evolutionEngine.start()
+
+    // 8. Enable AI diagnostics (Phase 3)
+    this.diagnosticEngine.setEnabled(true)
+    this.taskDecomposer.setEnabled(true)
+    this.resultValidator.setEnabled(true)
 
     logger.info("=== PCbot Started ===")
     this.printStatus()
@@ -218,6 +232,9 @@ export class Pcbot {
   getEvolutionEngine(): EvolutionEngine { return this.evolutionEngine }
   getTaskRouter(): TaskRouter { return this.taskRouter }
   getHttpApi(): HttpApiServer { return this.httpApi }
+  getDiagnosticEngine(): DiagnosticEngine { return this.diagnosticEngine }
+  getTaskDecomposer(): TaskDecomposer { return this.taskDecomposer }
+  getResultValidator(): ResultValidator { return this.resultValidator }
 }
 
 // ===== CLI Entry =====
