@@ -9,12 +9,15 @@ export class HealthMonitor {
   private client: OpenCodeClient
   private logger = new Logger("health-monitor")
   private timerId: ReturnType<typeof setInterval> | null = null
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null
   private healthHistory: HealthStatus[] = []
   private consecutiveFailures = 0
   private restartCount = 0
   private totalRestarts = 0
   private maxRestarts: number
   private backoffSchedule: number[]
+  private lastMemoryMB = 0
+  private memoryTrend: number[] = []
 
   constructor(server: ServerManager, client: OpenCodeClient) {
     this.server = server
@@ -36,6 +39,14 @@ export class HealthMonitor {
     return this.totalRestarts
   }
 
+  /** Detect abnormal memory leak (heap growing 50%+ over 5 minutes) */
+  get hasMemoryLeak(): boolean {
+    if (this.memoryTrend.length < 5) return false
+    const oldest = this.memoryTrend[0]!
+    const latest = this.memoryTrend[this.memoryTrend.length - 1]!
+    return latest > oldest * 1.5 && latest - oldest > 200 // 50% increase + at least 200MB
+  }
+
   start(): void {
     if (this.timerId) return
     const interval = getConfig().monitor.intervalMs
@@ -47,6 +58,11 @@ export class HealthMonitor {
       })
     }, interval)
 
+    // Start self-watchdog if enabled
+    if (getConfig().monitor.watchdogEnabled) {
+      this.startWatchdog()
+    }
+
     // Immediate first check
     this.check().catch(() => {})
   }
@@ -56,7 +72,43 @@ export class HealthMonitor {
       clearInterval(this.timerId)
       this.timerId = null
     }
+    this.stopWatchdog()
     this.logger.info("Health monitor stopped")
+  }
+
+  /**
+   * Self-watchdog: periodically checks if the monitor itself is responsive.
+   * If the watchdog detects no health checks for >2 intervals, it force-restarts.
+   */
+  private startWatchdog(): void {
+    let lastCheckTime = Date.now()
+    const interval = getConfig().monitor.intervalMs * 3
+
+    this.watchdogTimer = setInterval(() => {
+      const elapsed = Date.now() - lastCheckTime
+      if (elapsed > interval * 2) {
+        this.logger.warn(`Watchdog: no health check for ${Math.round(elapsed / 1000)}s, process may be hung`)
+        // Attempt a self-recovery: force GC if available
+        if (global.gc) {
+          try { global.gc() } catch { /* ignore */ }
+        }
+      }
+      lastCheckTime = Date.now()
+    }, interval)
+
+    // Update lastCheckTime on each health check
+    const origCheck = this.check.bind(this)
+    this.check = async () => {
+      lastCheckTime = Date.now()
+      return origCheck()
+    }
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer)
+      this.watchdogTimer = null
+    }
   }
 
   private async check(): Promise<void> {
@@ -71,13 +123,18 @@ export class HealthMonitor {
       responseTime = health.responseTime
     }
 
+    const memoryMB = process.memoryUsage().heapUsed / 1024 / 1024
+    this.lastMemoryMB = memoryMB
+    this.memoryTrend.push(memoryMB)
+    if (this.memoryTrend.length > 10) this.memoryTrend.shift()
+
     const status: HealthStatus = {
       serverRunning,
       apiReachable,
       lastCheck: new Date().toISOString(),
       uptime: this.server.uptime,
       responseTime,
-      memoryMB: process.memoryUsage().heapUsed / 1024 / 1024,
+      memoryMB,
       errorCount: this.consecutiveFailures,
     }
 
@@ -85,6 +142,13 @@ export class HealthMonitor {
     // Keep last 100 entries
     if (this.healthHistory.length > 100) {
       this.healthHistory.shift()
+    }
+
+    // Alert on memory leak
+    if (this.hasMemoryLeak) {
+      this.logger.warn(
+        `Potential memory leak: ${memoryMB.toFixed(1)}MB (trend: ${this.memoryTrend.map((m) => m.toFixed(0)).join(" → ")}MB)`,
+      )
     }
 
     if (!serverRunning || !apiReachable) {

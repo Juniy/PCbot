@@ -1,4 +1,4 @@
-import { expect, test, mock, beforeEach } from "bun:test"
+import { expect, test, beforeEach } from "bun:test"
 import { Notifier } from "../src/monitor/notifier"
 import { ChannelManager } from "../src/channels"
 import type { ChannelMessage, ChannelAdapter, ChannelType } from "../src/types"
@@ -43,14 +43,20 @@ const makeExec = (status: "completed" | "failed"): TaskExecution => ({
   startedAt: new Date().toISOString(),
   completedAt: new Date().toISOString(),
   currentStep: 1,
-  stepResults: [{ stepId: "s1", status: "success", duration: 100, output: "ok" }],
+  stepResults: [{ stepId: "s1", status: "success", duration: 100, output: "ok", startedAt: new Date().toISOString() }],
   retryCount: 0,
 })
+
+function assertMsg(i = 0): ChannelMessage {
+  const msg = capturedMessages[i]
+  expect(msg).toBeDefined()
+  return msg!
+}
 
 test("Notifier sends completion message on success", async () => {
   await notifier.notifyTaskComplete(makeExec("completed"), sampleTask)
   expect(capturedMessages.length).toBe(1)
-  const msg = capturedMessages[0]
+  const msg = assertMsg()
   expect(msg.content).toContain("✅")
   expect(msg.content).toContain("Test Task")
 })
@@ -58,7 +64,7 @@ test("Notifier sends completion message on success", async () => {
 test("Notifier sends failure message on failure", async () => {
   await notifier.notifyTaskComplete(makeExec("failed"), sampleTask)
   expect(capturedMessages.length).toBe(1)
-  const msg = capturedMessages[0]
+  const msg = assertMsg()
   expect(msg.content).toContain("❌")
 })
 
@@ -71,27 +77,27 @@ test("Notifier can toggle success notification", async () => {
 test("Notifier sends server restart notification", async () => {
   await notifier.notifyServerRestart(1, 3, true)
   expect(capturedMessages.length).toBe(1)
-  expect(capturedMessages[0].content).toContain("🔄")
+  expect(assertMsg().content).toContain("🔄")
 })
 
 test("Notifier sends server restart failure notification", async () => {
   await notifier.notifyServerRestart(3, 3, false)
   expect(capturedMessages.length).toBe(1)
-  expect(capturedMessages[0].content).toContain("🔴")
+  expect(assertMsg().content).toContain("🔴")
 })
 
 test("Notifier sends health issue notification", async () => {
   await notifier.notifyHealthIssue("Server unreachable")
   expect(capturedMessages.length).toBe(1)
-  expect(capturedMessages[0].content).toContain("⚠️")
-  expect(capturedMessages[0].content).toContain("Server unreachable")
+  expect(assertMsg().content).toContain("⚠️")
+  expect(assertMsg().content).toContain("Server unreachable")
 })
 
 test("Notifier sends daily summary", async () => {
   await notifier.sendDailySummary(10, 2, 86400000)
   expect(capturedMessages.length).toBe(1)
-  expect(capturedMessages[0].content).toContain("📊")
-  expect(capturedMessages[0].content).toContain("10")
-  expect(capturedMessages[0].content).toContain("2")
-  expect(capturedMessages[0].content).toContain("83%") // 10/12 = 83%
+  expect(assertMsg().content).toContain("📊")
+  expect(assertMsg().content).toContain("10")
+  expect(assertMsg().content).toContain("2")
+  expect(assertMsg().content).toContain("83%") // 10/12 = 83%
 })

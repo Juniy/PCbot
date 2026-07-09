@@ -3,7 +3,7 @@ import { Logger } from "../monitor/logger"
 import { OpenCodeClient } from "../client"
 import { TaskStore } from "./store"
 import { TaskExecutor } from "./executor"
-import type { TaskDefinition, TaskStep } from "../types"
+import type { TaskDefinition, TaskStep, AgentID } from "../types"
 
 /**
  * AI Task Decomposer
@@ -65,8 +65,8 @@ export class TaskDecomposer {
 
     try {
       const prompt = this.buildDecompositionPrompt(goal, context)
-      const session = await this.client.v2CreateSession()
-      const sessionId = session.data?.id ?? (session as any).id
+      const session = await this.client.v2CreateSession({ agentID: "prometheus" })
+      const sessionId = session.data.id
       if (!sessionId) throw new Error("Failed to create decomposition session")
 
       const response = await this.client.v2Prompt(sessionId, prompt)

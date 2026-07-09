@@ -26,7 +26,7 @@ export class TaskRouter {
   }
 
   private registerDefaultTemplates(): void {
-    // Template: simple prompt → run AI agent
+    // Template: simple prompt → run AI agent (sisyphus-junior)
     this.templates.set("prompt", (msg) => ({
       id: ulid(),
       name: `AI Response: ${msg.content.slice(0, 40)}`,
@@ -43,9 +43,10 @@ export class TaskRouter {
       timeout: 180_000,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      agentID: "sisyphus-junior",
     }))
 
-    // Template: shell command
+    // Template: shell command (hephaestus for tool-heavy work)
     this.templates.set("shell", (msg) => ({
       id: ulid(),
       name: `Shell: ${msg.content.slice(0, 40)}`,
@@ -64,7 +65,7 @@ export class TaskRouter {
       updatedAt: new Date().toISOString(),
     }))
 
-    // Template: multi-step analysis
+    // Template: multi-step analysis (explore agent for research)
     this.templates.set("analyze", (msg) => ({
       id: ulid(),
       name: `Analysis: ${msg.content.slice(0, 40)}`,
@@ -75,6 +76,7 @@ export class TaskRouter {
           name: "Create Plan",
           input: `Create an analysis plan for: ${msg.content}`,
           timeout: 60_000,
+          agentID: "explore",
         },
         {
           id: "execute-1",
@@ -82,6 +84,7 @@ export class TaskRouter {
           name: "Execute Analysis",
           input: `Now execute the analysis plan for: ${msg.content}. Provide detailed results.`,
           timeout: 180_000,
+          agentID: "explore",
         },
         {
           id: "summarize-1",
@@ -89,12 +92,14 @@ export class TaskRouter {
           name: "Summarize",
           input: `Summarize the analysis results for: ${msg.content}`,
           timeout: 60_000,
+          agentID: "sisyphus-junior",
         },
       ],
       maxRetries: 2,
       timeout: 300_000,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      agentID: "explore",
     }))
   }
 

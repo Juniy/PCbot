@@ -13,7 +13,7 @@ import { TaskStore } from "./engine/store"
 import { TaskExecutor } from "./engine/executor"
 import { TaskScheduler } from "./engine/scheduler"
 import { HealthMonitor } from "./monitor"
-import { Logger, globalLogger } from "./monitor/logger"
+import { Logger } from "./monitor/logger"
 import { ChannelManager } from "./channels"
 import { WebhookChannel } from "./channels/webhook"
 import { WeChatChannel } from "./channels/wechat"
@@ -65,7 +65,7 @@ export class Pcbot {
   constructor(options?: PcbotOptions) {
     this.options = options ?? {}
     if (options?.config) {
-      loadConfig(options.config as any)
+      loadConfig(options.config as Record<string, unknown>)
     }
 
     // Initialize components
@@ -123,6 +123,7 @@ export class Pcbot {
 
     // 4. Start HTTP API server (task management UI)
     if (this.options.enableApi !== false) {
+      const apiPort = this.options.apiPort ?? getConfig().server.apiPort
       this.httpApi = new HttpApiServer(
         this.taskStore,
         this.taskExecutor,
@@ -131,7 +132,8 @@ export class Pcbot {
         this.healthMonitor,
         this.serverManager,
         this.channelManager,
-        this.options.apiPort ?? 8081,
+        this.metrics,
+        apiPort,
       )
       await this.httpApi.start()
     }
@@ -186,19 +188,25 @@ export class Pcbot {
 
   private setupChannelRouting(): void {
     // Route webhook messages to tasks
-    const webhook = new WebhookChannel(this.options.webhookPort ?? 8080)
-    webhook.onMessage((msg) => {
-      this.taskRouter.route(msg).catch((err) => {
-        logger.error(`Route error: ${(err as Error).message}`)
+    if (this.options.enableWebhook !== false || getConfig().channels.webhook?.enabled) {
+      const webhookPort = this.options.webhookPort ?? getConfig().channels.webhook?.port ?? 51897
+      const webhook = new WebhookChannel(webhookPort)
+      webhook.onMessage((msg) => {
+        this.taskRouter.route(msg).catch((err) => {
+          logger.error(`Route error: ${(err as Error).message}`)
+        })
       })
-    })
-    this.channelManager.register("webhook", webhook)
+      this.channelManager.register("webhook", webhook)
+    }
 
     // Route WeChat messages to tasks
-    if (this.options.enableWechat || getConfig().channels.wechat?.enabled) {
+    const wechatCfg = getConfig().channels.wechat
+    if (this.options.enableWechat || wechatCfg?.enabled) {
       const wechat = new WeChatChannel({
-        apiUrl: this.options.wechatApiUrl,
-        token: this.options.wechatToken,
+        mode: wechatCfg?.mode,
+        gatewayUrl: wechatCfg?.gatewayUrl || this.options.wechatApiUrl,
+        gatewayToken: wechatCfg?.gatewayToken || this.options.wechatToken,
+        callbackUrl: wechatCfg?.callbackUrl,
       })
       wechat.onMessage((msg) => {
         this.taskRouter.route(msg).catch((err) => {
@@ -249,7 +257,7 @@ export class Pcbot {
 │ Server:    ${this.serverManager.isRunning ? "✅ 运行中" : "❌ 已停止"}
 │ Server URL: ${this.serverManager.serverUrl ?? "-"}
 │ API客户端: ${this.client.isConfigured ? "✅ 已配置" : "⏳ 等待连接"}
-│ HTTP API:  ${this.httpApi ? "✅ 运行中 (port 8081)" : "⏹ 未启用"}
+│ HTTP API:  ${this.httpApi ? `✅ 运行中 (port ${getConfig().server.apiPort})` : "⏹ 未启用"}
 │ 任务引擎:  ${this.taskExecutor.isRunning ? `▶ 执行中 (${this.taskExecutor.runningCount})` : "⏸ 空闲"}
 │ 任务总数:  ${this.taskStore.getAllTasks().length}
 │ 调度器:    ${this.taskScheduler ? "✅ 运行中" : "⏹ 已停止"}
@@ -281,11 +289,12 @@ async function main() {
   const serveMode = args.includes("--serve") || args.includes("serve")
 
   if (serveMode) {
+    const cfg = getConfig()
     const bot = new Pcbot({
       enableWebhook: true,
-      webhookPort: 8080,
+      webhookPort: cfg.channels.webhook?.port ?? 51897,
       enableApi: true,
-      apiPort: 8081,
+      apiPort: cfg.server.apiPort,
     })
 
     // Handle graceful shutdown
@@ -301,12 +310,14 @@ async function main() {
 
     await bot.start()
 
-    console.log("\n📡 API Endpoints:")
-    console.log("  POST http://localhost:8080/webhook  — Send message to process")
-    console.log("  POST http://localhost:8081/api/chat  — Chat-style task creation")
-    console.log("  GET  http://localhost:8081/api/status — System status")
-    console.log("  GET  http://localhost:8081/api/tasks  — List tasks")
-    console.log("  GET  http://localhost:8081/api/evolution — Evolution metrics")
+    const whPort = getConfig().channels.webhook?.port ?? 51897
+    const apiPort = getConfig().server.apiPort
+    console.log("\nAPI Endpoints:")
+    console.log(`  POST http://localhost:${whPort}/webhook     — Send message to process`)
+    console.log(`  POST http://localhost:${apiPort}/api/chat   — Chat-style task creation`)
+    console.log(`  GET  http://localhost:${apiPort}/api/status  — System status`)
+    console.log(`  GET  http://localhost:${apiPort}/api/tasks   — List tasks`)
+    console.log(`  GET  http://localhost:${apiPort}/api/evolution — Evolution metrics`)
     console.log("")
 
     // Keep alive

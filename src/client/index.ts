@@ -1,6 +1,31 @@
-import { getConfig } from "../config"
 import { Logger } from "../monitor/logger"
-import type { HealthStatus } from "../types"
+
+// ===== Response Types =====
+export interface SessionResponse {
+  id: string
+  agentID?: string
+  modelID?: string
+  title?: string
+  createdAt?: string
+  updatedAt?: string
+  status?: string
+}
+
+export interface CreateSessionResult {
+  data: SessionResponse
+}
+
+export interface PromptResult {
+  data: {
+    text: string
+    message: string
+    content?: string
+    role?: string
+    [key: string]: unknown
+  }
+}
+
+export type GenericDataResult<T = unknown> = { data: T }
 
 /**
  * OpenCode API client - lightweight HTTP wrapper around opencode serve
@@ -76,21 +101,21 @@ export class OpenCodeClient {
     }
   }
 
-  // ===== Sessions =====
+  // ===== Sessions (V1) =====
   async listSessions(params?: { limit?: number; cursor?: string }) {
     const query = new URLSearchParams()
     if (params?.limit) query.set("limit", String(params.limit))
     if (params?.cursor) query.set("cursor", params.cursor)
     const qs = query.toString()
-    return this.request<{ data: any[]; cursor?: any }>("GET", `/sessions${qs ? `?${qs}` : ""}`)
+    return this.request<GenericDataResult<SessionResponse[]>>("GET", `/sessions${qs ? `?${qs}` : ""}`)
   }
 
   async createSession(payload: { agent?: string; model?: string }) {
-    return this.request<{ data: any }>("POST", "/sessions", payload)
+    return this.request<GenericDataResult<SessionResponse>>("POST", "/sessions", payload)
   }
 
   async getSession(id: string) {
-    return this.request<{ data: any }>("GET", `/sessions/${id}`)
+    return this.request<GenericDataResult<SessionResponse>>("GET", `/sessions/${id}`)
   }
 
   async deleteSession(id: string) {
@@ -98,24 +123,24 @@ export class OpenCodeClient {
   }
 
   async promptSession(sessionId: string, text: string) {
-    return this.request<{ data: { message: string } }>("POST", `/sessions/${sessionId}/prompt`, {
+    return this.request<PromptResult>("POST", `/sessions/${sessionId}/prompt`, {
       text,
       stream: false,
     })
   }
 
   async getSessionMessages(sessionId: string) {
-    return this.request<{ data: any[] }>("GET", `/sessions/${sessionId}/messages`)
+    return this.request<GenericDataResult<unknown[]>>("GET", `/sessions/${sessionId}/messages`)
   }
 
   // ===== Agents =====
   async listAgents() {
-    return this.request<{ data: any[] }>("GET", "/agents")
+    return this.request<GenericDataResult<unknown[]>>("GET", "/agents")
   }
 
   // ===== Models =====
   async listModels() {
-    return this.request<{ data: any[] }>("GET", "/models")
+    return this.request<GenericDataResult<unknown[]>>("GET", "/models")
   }
 
   // ===== V2 API =====
@@ -125,15 +150,19 @@ export class OpenCodeClient {
 
   async v2ListSessions(params?: { limit?: number }) {
     const query = params?.limit ? `?limit=${params.limit}` : ""
-    return this.request<{ data: any[] }>("GET", `/api/v2/sessions${query}`)
+    return this.request<GenericDataResult<SessionResponse[]>>("GET", `/api/v2/sessions${query}`)
   }
 
-  async v2CreateSession(payload?: { agentID?: string; modelID?: string }) {
-    return this.request<{ data: any }>("POST", "/api/v2/sessions", payload ?? {})
+  async v2CreateSession(payload?: { agentID?: string; modelID?: string }): Promise<CreateSessionResult> {
+    // Map agentID → agent (OpenCode API v2 field name)
+    const body: Record<string, unknown> = {}
+    if (payload?.agentID) body.agent = payload.agentID
+    if (payload?.modelID) body.model = { id: payload.modelID, providerID: "opencode" }
+    return this.request<CreateSessionResult>("POST", "/api/v2/sessions", body)
   }
 
-  async v2Prompt(sessionId: string, text: string) {
-    return this.request<{ data: any }>("POST", `/api/v2/sessions/${sessionId}/prompt`, {
+  async v2Prompt(sessionId: string, text: string): Promise<PromptResult> {
+    return this.request<PromptResult>("POST", `/api/v2/sessions/${sessionId}/prompt`, {
       text,
       stream: false,
     })

@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCbot 监控系统</title>
+<style>
+/* ===== CSS Variables & Reset ===== */
+:root {
+  --bg-primary: #0f1117;
+  --bg-secondary: #161822;
+  --bg-card: #1b1e2a;
+  --bg-hover: #222640;
+  --bg-input: #12141e;
+  --border: #2a2d3a;
+  --border-light: #353950;
+  --text-primary: #e8e9ed;
+  --text-secondary: #8b8fa3;
+  --text-muted: #5a5e72;
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --accent-bg: rgba(99,102,241,0.12);
+  --green: #22c55e;
+  --green-bg: rgba(34,197,94,0.12);
+  --red: #ef4444;
+  --red-bg: rgba(239,68,68,0.12);
+  --yellow: #eab308;
+  --yellow-bg: rgba(234,179,8,0.12);
+  --blue: #3b82f6;
+  --blue-bg: rgba(59,130,246,0.12);
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 16px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,0.4);
+  --sidebar-width: 220px;
+  --font: -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  --transition: 180ms ease;
+}
+html.light {
+  --bg-primary: #f5f6f8;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f0f1f5;
+  --bg-input: #f5f6f8;
+  --border: #e2e4ea;
+  --border-light: #d0d3dd;
+  --text-primary: #1a1d29;
+  --text-secondary: #5f6478;
+  --text-muted: #9ca0b0;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,0.08);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body {
+  font-family: var(--font);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  z-index: 100;
+  transition: transform var(--transition);
+}
+.sidebar-header {
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sidebar-header .logo {
+  width: 32px; height: 32px;
+  background: var(--accent);
+  border-radius: 8px;
+  display: flex;
+  align-items: center; justify-content: center;
+  font-weight: 700; font-size: 16px; color: #fff;
+  flex-shrink: 0;
+}
+.sidebar-header h1 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.sidebar-header .version { font-size: 11px; color: var(--text-muted); }
+.sidebar-nav { flex: 1; padding: 10px 8px; overflow-y: auto; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  cursor: pointer; color: var(--text-secondary);
+  font-size: 13px; font-weight: 500;
+  transition: all var(--transition);
+  margin-bottom: 2px;
+  user-select: none;
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.nav-item.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.nav-item .icon { width: 20px; text-align: center; font-size: 16px; }
+.nav-item .badge {
+  margin-left: auto; font-size: 11px; padding: 1px 7px;
+  border-radius: 10px; background: var(--red-bg); color: var(--red); font-weight: 600;
+  display: none;
+}
+.nav-item .badge.show { display: inline; }
+.sidebar-footer {
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.theme-toggle {
+  background: none; border: 1px solid var(--border); color: var(--text-secondary);
+  padding: 6px 12px; border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 13px; transition: all var(--transition);
+}
+.theme-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+.conn-status { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+.conn-dot.online { background: var(--green); }
+.conn-dot.offline { background: var(--red); }
+
+/* ===== Main Content ===== */
+.main {
+  margin-left: var(--sidebar-width);
+  flex: 1;
+  min-height: 100vh;
+  padding: 0;
+}
+.tab-content { display: none; padding: 28px 32px; }
+.tab-content.active { display: block; }
+.page-header { margin-bottom: 24px; }
+.page-header h2 { font-size: 20px; font-weight: 700; }
+.page-header p { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
+
+/* ===== Dashboard ===== */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  transition: border-color var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+.stat-card:hover { border-color: var(--border-light); }
+.stat-card .label { font-size: 12px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.stat-card .value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-card .sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.stat-card .mini-bar {
+  position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.channels-section { margin-top: 24px; }
+.channels-section h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.channel-list { display: flex; gap: 10px; flex-wrap: wrap; }
+.channel-tag {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 20px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  font-size: 13px; color: var(--text-secondary);
+}
+.channel-tag .dot { width: 6px; height: 6px; border-radius: 50%; }
+.channel-tag .dot.on { background: var(--green); }
+.channel-tag .dot.off { background: var(--text-muted); }
+
+/* ===== Tables ===== */
+.table-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.table-wrap table { width: 100%; border-collapse: collapse; }
+.table-wrap th {
+  text-align: left; padding: 10px 16px;
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.table-wrap td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid var(--border); }
+.table-wrap tr:last-child td { border-bottom: none; }
+.table-wrap tr:hover td { background: var(--bg-hover); }
+
+/* ===== Logs ===== */
+.logs-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex; flex-direction: column;
+  height: calc(100vh - 160px);
+  overflow: hidden;
+}
+.logs-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.logs-toolbar .log-count { font-size: 12px; color: var(--text-muted); margin-right: auto; }
+.log-filter {
+  padding: 4px 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-input);
+  color: var(--text-primary); font-size: 12px;
+  cursor: pointer; font-family: var(--font);
+}
+.log-filter:focus { outline: none; border-color: var(--accent); }
+.btn {
+  padding: 5px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-input);
+  color: var(--text-secondary); font-size: 12px; cursor: pointer;
+  transition: all var(--transition); font-family: var(--font);
+}
+.btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover { background: var(--accent-hover); }
+.logs-viewport {
+  flex: 1; overflow-y: auto;
+  padding: 0; position: relative;
+}
+.logs-viewport::-webkit-scrollbar { width: 6px; }
+.logs-viewport::-webkit-scrollbar-track { background: transparent; }
+.logs-viewport::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+.log-entry {
+  display: flex; gap: 12px;
+  padding: 4px 16px; font-family: var(--font-mono);
+  font-size: 12px; line-height: 1.6;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  min-height: 26px;
+  transition: background 80ms ease;
+}
+.log-entry:hover { background: var(--bg-hover); }
+.log-entry .log-time { color: var(--text-muted); white-space: nowrap; flex-shrink: 0; width: 170px; }
+.log-entry .log-level {
+  width: 48px; flex-shrink: 0; font-weight: 600; text-transform: uppercase;
+}
+.log-entry .log-level.debug { color: var(--text-muted); }
+.log-entry .log-level.info { color: var(--blue); }
+.log-entry .log-level.warn { color: var(--yellow); }
+.log-entry .log-level.error { color: var(--red); }
+.log-entry .log-msg { word-break: break-all; color: var(--text-primary); flex: 1; }
+.log-entry .log-logger { color: var(--text-muted); flex-shrink: 0; margin-left: auto; font-size: 11px; }
+
+/* ===== Forms ===== */
+.form-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.form-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.form-row { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 12px; }
+.form-group { flex: 1; min-width: 200px; }
+.form-group label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
+.form-group input, .form-group select {
+  width: 100%; padding: 7px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-input);
+  color: var(--text-primary); font-size: 13px; font-family: var(--font);
+  transition: border-color var(--transition);
+}
+.form-group input:focus, .form-group select:focus { outline: none; border-color: var(--accent); }
+.form-group .help { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.form-actions { margin-top: 16px; display: flex; gap: 8px; }
+
+/* ===== Execution Terminal ===== */
+.exec-viewport {
+  background: #0a0c12;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  min-height: 400px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  color: #cdd6e5;
+}
+.exec-viewport::-webkit-scrollbar { width: 6px; }
+.exec-viewport::-webkit-scrollbar-track { background: transparent; }
+.exec-viewport::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+.exec-line { white-space: pre-wrap; word-break: break-all; padding: 1px 0; }
+.exec-line .ts { color: #6b7280; margin-right: 12px; }
+.exec-line.stdout { color: #cdd6e5; }
+.exec-line.stderr { color: #f87171; }
+.exec-line.system { color: #60a5fa; font-weight: 500; }
+.exec-line.success { color: #4ade80; }
+.exec-line.input { color: #c084fc; }
+.exec-prompt { display: flex; gap: 8px; padding: 12px 0 0; border-top: 1px solid #1f2230; margin-top: 12px; }
+.exec-prompt input {
+  flex: 1; background: #0f1117; border: 1px solid #2a2d3a;
+  color: #e8e9ed; padding: 8px 12px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 13px;
+}
+.exec-prompt input:focus { outline: none; border-color: var(--accent); }
+
+/* ===== Toast ===== */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 20px;
+  box-shadow: var(--shadow-lg);
+  font-size: 13px; z-index: 9999;
+  transform: translateY(80px); opacity: 0;
+  transition: all 300ms ease;
+  pointer-events: none;
+}
+.toast.show { transform: translateY(0); opacity: 1; pointer-events: auto; }
+.toast.success { border-left: 3px solid var(--green); }
+.toast.error { border-left: 3px solid var(--red); }
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); width: 100%; max-width: 280px; }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .tab-content { padding: 20px 16px; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+  .log-entry .log-time { width: 100px; }
+  .mobile-menu-btn {
+    display: flex !important; position: fixed; top: 12px; left: 12px; z-index: 101;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; cursor: pointer; color: var(--text-primary);
+  }
+}
+.mobile-menu-btn { display: none; }
+.overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  z-index: 99;
+}
+.overlay.show { display: block; }
+
+/* ===== Empty State ===== */
+.empty-state { text-align: center; padding: 48px 20px; color: var(--text-muted); }
+.empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
+
+/* ===== Flex layout helpers ===== */
+.flex-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.flex-1 { flex: 1; min-width: 300px; }
+</style>
+</head>
+<body>
+
+<!-- Mobile Menu Toggle -->
+<button class="mobile-menu-btn" onclick="toggleSidebar()">☰</button>
+<div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">P</div>
+    <div>
+      <h1>PCbot</h1>
+      <div class="version">v0.2 · 监控系统</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
+      <span class="icon">📊</span> 仪表盘
+    </div>
+    <div class="nav-item" data-tab="logs" onclick="switchTab('logs')">
+      <span class="icon">📋</span> 日志
+      <span class="badge" id="logBadge">0</span>
+    </div>
+    <div class="nav-item" data-tab="tasks" onclick="switchTab('tasks')">
+      <span class="icon">📝</span> 任务
+    </div>
+    <div class="nav-item" data-tab="exec" onclick="switchTab('exec')">
+      <span class="icon">💻</span> 终端执行
+    </div>
+    <div class="nav-item" data-tab="config" onclick="switchTab('config')">
+      <span class="icon">⚙️</span> 配置
+    </div>
+    <div class="nav-item" data-tab="wechat" onclick="switchTab('wechat')">
+      <span class="icon">💬</span> 微信接入
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">🌙 暗色</button>
+    <div class="conn-status">
+      <span class="conn-dot offline" id="connDot"></span>
+      <span id="connText">离线</span>
+    </div>
+  </div>
+</aside>
+
+<!-- Main -->
+<main class="main">
+
+<!-- Tab: Dashboard -->
+<div class="tab-content active" id="tab-dashboard">
+  <div class="page-header">
+    <h2>系统仪表盘</h2>
+    <p id="lastUpdate">实时监控 PCbot 运行状态</p>
+  </div>
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card"><div class="mini-bar" style="background:var(--accent)"></div><div class="label">服务器状态</div><div class="value" id="svrStatus">—</div><div class="sub" id="svrUrl"></div></div>
+    <div class="stat-card"><div class="mini-bar" style="background:var(--green)"></div><div class="label">运行时间</div><div class="value" id="svrUptime">—</div><div class="sub">时:分:秒</div></div>
+    <div class="stat-card"><div class="mini-bar" style="background:var(--blue)"></div><div class="label">任务总数</div><div class="value" id="taskTotal">0</div><div class="sub">运行中: <span id="taskRunning">0</span></div></div>
+    <div class="stat-card"><div class="mini-bar" style="background:var(--yellow)"></div><div class="label">健康检查失败</div><div class="value" id="healthFails">0</div><div class="sub">重启次数: <span id="restartCount">0</span></div></div>
+    <div class="stat-card"><div class="mini-bar" style="background:var(--red)"></div><div class="label">内存泄漏</div><div class="value" id="memoryLeak">否</div><div class="sub" id="memoryDetail">堆: — MB</div></div>
+    <div class="stat-card"><div class="mini-bar" style="background:var(--green)"></div><div class="label">默认 AI 智能体</div><div class="value" id="defaultAgent" style="font-size:20px">—</div><div class="sub">可用: <span id="agentCount">0</span></div></div>
+  </div>
+  <div class="channels-section">
+    <h3>渠道状态</h3>
+    <div class="channel-list" id="channelList"></div>
+  </div>
+  <div class="flex-row" style="margin-top:24px">
+    <div class="flex-1">
+      <h3 style="margin-bottom:10px;font-size:14px;font-weight:600">最近执行 (10)</h3>
+      <div class="table-wrap"><table><thead><tr><th>ID</th><th>状态</th><th>耗时</th></tr></thead><tbody id="recentExecs"><tr><td colspan="3" style="text-align:center;color:var(--text-muted)">暂无执行记录</td></tr></tbody></table></div>
+    </div>
+    <div class="flex-1">
+      <h3 style="margin-bottom:10px;font-size:14px;font-weight:600">进化引擎</h3>
+      <div class="table-wrap"><table><thead><tr><th>指标</th><th>值</th></tr></thead><tbody id="evoMetrics"><tr><td colspan="2" style="text-align:center;color:var(--text-muted)">暂无数据</td></tr></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Logs -->
+<div class="tab-content" id="tab-logs">
+  <div class="page-header">
+    <h2>系统日志</h2>
+    <p>实时日志流 · 支持级别过滤 · 虚拟滚动优化</p>
+  </div>
+  <div class="logs-container">
+    <div class="logs-toolbar">
+      <span class="log-count" id="logCount">共 0 条</span>
+      <select class="log-filter" id="logLevelFilter" onchange="applyLogFilter()">
+        <option value="">全部级别</option>
+        <option value="debug">DEBUG</option>
+        <option value="info">INFO</option>
+        <option value="warn">WARN</option>
+        <option value="error">ERROR</option>
+      </select>
+      <select class="log-filter" id="logLoggerFilter" onchange="applyLogFilter()">
+        <option value="">所有模块</option>
+      </select>
+      <button class="btn" onclick="clearLogs()">清屏</button>
+      <button class="btn btn-primary" onclick="toggleAutoScroll()" id="scrollBtn">自动滚动 ✓</button>
+    </div>
+    <div class="logs-viewport" id="logViewport"></div>
+  </div>
+</div>
+
+<!-- Tab: Tasks -->
+<div class="tab-content" id="tab-tasks">
+  <div class="page-header">
+    <h2>任务管理</h2>
+    <p>所有已注册的任务定义</p>
+  </div>
+  <div class="table-wrap">
+    <table><thead><tr><th>ID</th><th>名称</th><th>步骤数</th><th>超时</th><th>标签</th><th>创建时间</th></tr></thead><tbody id="tasksBody"></tbody></table>
+  </div>
+</div>
+
+<!-- Tab: Exec -->
+<div class="tab-content" id="tab-exec">
+  <div class="page-header">
+    <h2>终端执行反馈</h2>
+    <p>实时显示 opencode 终端的执行日志与反馈结果</p>
+  </div>
+  <div class="exec-viewport" id="execViewport">
+    <div class="exec-line system"><span class="ts">[系统]</span> PCbot 终端输出监视器已就绪</div>
+  </div>
+</div>
+
+<!-- Tab: Config -->
+<div class="tab-content" id="tab-config">
+  <div class="page-header">
+    <h2>系统配置</h2>
+    <p>OpenCode 模型、智能体、运行参数配置</p>
+  </div>
+    <div class="form-section">
+      <h3>OpenCode 服务器配置</h3>
+      <div class="form-row">
+        <div class="form-group"><label>主机地址</label><input id="cfg-hostname" placeholder="127.0.0.1"></div>
+        <div class="form-group"><label>OpenCode 端口</label><input id="cfg-port" type="number" placeholder="51899"><div class="help">opencode serve 监听端口</div></div>
+        <div class="form-group"><label>日志级别</label><select id="cfg-loglevel"><option value="debug">DEBUG</option><option value="info" selected>INFO</option><option value="warn">WARN</option><option value="error">ERROR</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>API 服务端口</label><input id="cfg-api-port" type="number" placeholder="51898"><div class="help">PCbot Web UI / REST API 端口</div></div>
+        <div class="form-group"><label>Webhook 端口</label><input id="cfg-webhook-port" type="number" placeholder="51897"><div class="help">外部消息接收端口 (POST /webhook)</div></div>
+        <div class="form-group"><label>opencode 二进制</label><input id="cfg-opencode-binary" placeholder="opencode"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>自动重启</label><select id="cfg-autorestart"><option value="true">是</option><option value="false">否</option></select></div>
+        <div class="form-group"><label>最大重启次数</label><input id="cfg-maxrestarts" type="number" placeholder="3"></div>
+      </div>
+    </div>
+  <div class="form-section">
+    <h3>AI 智能体配置</h3>
+    <div class="form-row">
+      <div class="form-group"><label>默认智能体</label><select id="cfg-default-agent"></select><div class="help">任务执行时默认使用的 OhMyOpenCode 智能体</div></div>
+    </div>
+  </div>
+  <div class="form-section">
+    <h3>监控配置</h3>
+    <div class="form-row">
+      <div class="form-group"><label>健康检查间隔 (ms)</label><input id="cfg-monitor-interval" type="number" placeholder="30000"></div>
+      <div class="form-group"><label>日志保留文件数</label><input id="cfg-logmaxfiles" type="number" placeholder="7"></div>
+      <div class="form-group"><label>自监控 (Watchdog)</label><select id="cfg-watchdog"><option value="true">启用</option><option value="false">禁用</option></select></div>
+    </div>
+  </div>
+  <div class="form-actions">
+    <button class="btn btn-primary" onclick="saveConfig()">💾 保存配置</button>
+    <button class="btn" onclick="loadConfig()">🔄 刷新</button>
+  </div>
+</div>
+
+<!-- Tab: WeChat -->
+<div class="tab-content" id="tab-wechat">
+  <div class="page-header">
+    <h2>微信接入配置</h2>
+    <p>配置个人微信网关，支持多渠道消息路由</p>
+  </div>
+  <div class="form-section">
+    <h3>微信网关设置</h3>
+    <div class="form-row">
+      <div class="form-group"><label>启用微信</label><select id="wc-enabled"><option value="true">是</option><option value="false" selected>否</option></select></div>
+      <div class="form-group"><label>网关模式</label><select id="wc-mode"><option value="webhook">Webhook</option><option value="proxy">Proxy</option><option value="work-wechat">企业微信</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>网关地址</label><input id="wc-gateway-url" placeholder="http://localhost:9090"><div class="help">第三方微信网关的 URL（如 wechaty、ComWeChatRobot）</div></div>
+      <div class="form-group"><label>网关 Token</label><input id="wc-gateway-token" type="password" placeholder="可选"><div class="help">网关认证令牌</div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>回调地址</label><input id="wc-callback-url" placeholder="http://localhost:8080/api/channels/wechat"><div class="help">网关回调地址（微信消息将发送到此 URL）</div></div>
+    </div>
+  </div>
+  <div class="form-actions">
+    <button class="btn btn-primary" onclick="saveWechatConfig()">💾 保存微信配置</button>
+    <button class="btn" onclick="loadConfig()">🔄 刷新</button>
+  </div>
+</div>
+
+</main>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== State =====
+const STATE = {
+  logs: [],
+  filteredLogs: [],
+  autoScroll: true,
+  sseConnected: false,
+  logIdCounter: 0,
+  logBadgeCount: 0,
+  currentTab: 'dashboard',
+  config: null,
+  agents: [],
+}
+
+// ===== DOM refs =====
+const $ = (s) => document.querySelector(s)
+const $$ = (s) => document.querySelectorAll(s)
+
+// ===== Connection =====
+const API_BASE = window.location.origin
+
+function connectSSE() {
+  const es = new EventSource(`${API_BASE}/api/events`)
+  es.onopen = () => {
+    STATE.sseConnected = true
+    $('#connDot').className = 'conn-dot online'
+    $('#connText').textContent = '在线'
+  }
+  es.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data)
+      if (msg.type === 'snapshot') {
+        STATE.logs = msg.logs || []
+        renderDashboard(msg.status)
+        renderLogs()
+        updateTasks()
+        updateEvoMetrics()
+      } else if (msg.type === 'log') {
+        appendLog(msg.entry)
+      } else if (msg.type === 'heartbeat') {
+        renderDashboard(msg.status)
+      }
+    } catch(ex) { /* ignore parse errors */ }
+  }
+  es.onerror = () => {
+    STATE.sseConnected = false
+    $('#connDot').className = 'conn-dot offline'
+    $('#connText').textContent = '离线'
+    setTimeout(connectSSE, 3000)
+  }
+}
+
+// ===== Tab Switching =====
+function switchTab(name) {
+  STATE.currentTab = name
+  $$('.tab-content').forEach(el => el.classList.remove('active'))
+  const tab = document.getElementById(`tab-${name}`)
+  if (tab) tab.classList.add('active')
+  $$('.nav-item').forEach(el => el.classList.remove('active'))
+  const nav = document.querySelector(`.nav-item[data-tab="${name}"]`)
+  if (nav) nav.classList.add('active')
+  // Reset log badge when viewing logs
+  if (name === 'logs') {
+    STATE.logBadgeCount = 0
+    $('#logBadge').classList.remove('show')
+  }
+  // Close mobile sidebar
+  closeSidebar()
+  // Load data on tab switch
+  if (name === 'tasks') updateTasks()
+  if (name === 'config') loadConfig()
+  if (name === 'wechat') loadConfig()
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open')
+  document.getElementById('overlay').classList.toggle('show')
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open')
+  document.getElementById('overlay').classList.remove('show')
+}
+
+// ===== Theme =====
+function toggleTheme() {
+  const html = document.documentElement
+  const isLight = html.classList.toggle('light')
+  $('#themeBtn').textContent = isLight ? '☀️ 亮色' : '🌙 暗色'
+  localStorage.setItem('pcbot-theme', isLight ? 'light' : 'dark')
+}
+// Init theme
+if (localStorage.getItem('pcbot-theme') === 'light' || window.matchMedia?.('(prefers-color-scheme:light)').matches) {
+  document.documentElement.classList.add('light')
+  $('#themeBtn').textContent = '☀️ 亮色'
+}
+
+// ===== Dashboard =====
+function formatUptime(ms) {
+  if (!ms) return '—'
+  const h = Math.floor(ms / 3600000)
+  const m = Math.floor((ms % 3600000) / 60000)
+  const s = Math.floor((ms % 60000) / 1000)
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+}
+
+function renderDashboard(status) {
+  if (!status) return
+  const s = status.server || {}
+  const t = status.tasks || {}
+  const m = status.monitor || {}
+  const c = status.config || {}
+  const ch = status.channels || {}
+
+  $('#svrStatus').textContent = s.running ? '✅ 运行中' : '❌ 已停止'
+  $('#svrStatus').style.color = s.running ? 'var(--green)' : 'var(--red)'
+  $('#svrUrl').textContent = s.url || '无连接'
+  $('#svrUptime').textContent = formatUptime(s.uptime)
+  $('#taskTotal').textContent = t.total ?? 0
+  $('#taskRunning').textContent = t.running ?? 0
+  $('#healthFails').textContent = m.consecutiveFailures ?? 0
+  $('#restartCount').textContent = m.restarts ?? 0
+  $('#memoryLeak').textContent = m.hasMemoryLeak ? '⚠️ 可疑' : '✅ 正常'
+  $('#memoryLeak').style.color = m.hasMemoryLeak ? 'var(--yellow)' : 'var(--green)'
+  $('#memoryDetail').textContent = `Watchdog: ${c.watchdogEnabled ? '已启用' : '未启用'}`
+  $('#defaultAgent').textContent = c.defaultAgent || '—'
+  $('#agentCount').textContent = (status.agents || []).length
+
+  // Channels
+  const chHtml = (ch.registered || []).map(name => {
+    const isOn = name !== 'wechat' || ch.wechat !== null
+    return `<span class="channel-tag"><span class="dot ${isOn ? 'on' : 'off'}"></span>${name}</span>`
+  }).join('')
+  $('#channelList').innerHTML = chHtml || '<span style="color:var(--text-muted)">无已注册渠道</span>'
+
+  $('#lastUpdate').textContent = `实时监控 PCbot 运行状态 · ${new Date().toLocaleTimeString('zh-CN')}`
+}
+
+// ===== Logs =====
+function appendLog(entry) {
+  entry._id = STATE.logIdCounter++
+  STATE.logs.push(entry)
+  if (STATE.logs.length > 5000) STATE.logs.splice(0, STATE.logs.length - 5000)
+
+  // Increment badge if not on log tab
+  if (STATE.currentTab !== 'logs') {
+    STATE.logBadgeCount++
+    const badge = $('#logBadge')
+    badge.textContent = STATE.logBadgeCount > 99 ? '99+' : STATE.logBadgeCount
+    badge.classList.add('show')
+  }
+
+  applyLogFilter()
+}
+
+function applyLogFilter() {
+  const level = $('#logLevelFilter').value
+  const logger = $('#logLoggerFilter').value
+  STATE.filteredLogs = STATE.logs.filter(e => {
+    if (level && e.level !== level) return false
+    if (logger && e.logger !== logger) return false
+    return true
+  })
+  renderLogs()
+}
+
+function renderLogs() {
+  const vp = $('#logViewport')
+  const items = STATE.filteredLogs
+  $('#logCount').textContent = `共 ${items.length} 条 (缓冲区 ${STATE.logs.length})`
+
+  // Update logger filter options
+  const currentLogger = $('#logLoggerFilter').value
+  const loggers = [...new Set(STATE.logs.map(e => e.logger))].sort()
+  const loggerOpts = '<option value="">所有模块</option>' + loggers.map(l =>
+    `<option value="${l}" ${l === currentLogger ? 'selected' : ''}>${l}</option>`
+  ).join('')
+  $('#logLoggerFilter').innerHTML = loggerOpts
+
+  if (items.length === 0) {
+    vp.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>暂无日志</p></div>'
+    return
+  }
+
+  // Build HTML (batched for performance)
+  let html = ''
+  const batchSize = 500
+  const len = items.length
+  const start = Math.max(0, STATE.autoScroll ? len - 500 : 0)
+  const end = len
+
+  for (let i = start; i < end; i++) {
+    const e = items[i]
+    html += `<div class="log-entry">
+      <span class="log-time">${e.time.slice(11, 23)}</span>
+      <span class="log-level ${e.level}">${e.level}</span>
+      <span class="log-msg">${escapeHtml(e.msg)}</span>
+      <span class="log-logger">${e.logger}</span>
+    </div>`
+  }
+
+  vp.innerHTML = html
+
+  if (STATE.autoScroll) {
+    vp.scrollTop = vp.scrollHeight
+  }
+}
+
+function clearLogs() {
+  STATE.logs = []
+  STATE.filteredLogs = []
+  renderLogs()
+}
+
+function toggleAutoScroll() {
+  STATE.autoScroll = !STATE.autoScroll
+  $('#scrollBtn').textContent = STATE.autoScroll ? '自动滚动 ✓' : '自动滚动 ✗'
+  if (STATE.autoScroll) renderLogs()
+}
+
+// ===== Tasks =====
+async function updateTasks() {
+  try {
+    const r = await fetch(`${API_BASE}/api/tasks`)
+    const j = await r.json()
+    const tasks = j.data || []
+    if (tasks.length === 0) {
+      $('#tasksBody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">暂无任务</td></tr>'
+    } else {
+      $('#tasksBody').innerHTML = tasks.map(t => `<tr>
+        <td style="font-family:var(--font-mono);font-size:11px">${t.id.slice(0, 12)}</td>
+        <td>${escapeHtml(t.name)}</td>
+        <td>${(t.steps || []).length}</td>
+        <td>${(t.timeout / 1000).toFixed(0)}s</td>
+        <td>${(t.tags || []).join(', ') || '—'}</td>
+        <td style="font-size:11px;color:var(--text-muted)">${t.createdAt ? t.createdAt.slice(0,19).replace('T', ' ') : '—'}</td>
+      </tr>`).join('')
+    }
+  } catch {}
+}
+
+// ===== Executions =====
+async function updateRecentExecs() {
+  try {
+    const r = await fetch(`${API_BASE}/api/executions?limit=10`)
+    const j = await r.json()
+    const execs = j.data || []
+    if (execs.length === 0) {
+      $('#recentExecs').innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">暂无执行记录</td></tr>'
+    } else {
+      $('#recentExecs').innerHTML = execs.map(e => `<tr>
+        <td style="font-family:var(--font-mono);font-size:11px">${e.id.slice(0, 12)}</td>
+        <td><span style="color:${e.status === 'completed' ? 'var(--green)' : e.status === 'failed' ? 'var(--red)' : 'var(--yellow)'}">${e.status}</span></td>
+        <td>${e.completedAt && e.startedAt ? ((new Date(e.completedAt) - new Date(e.startedAt)) / 1000).toFixed(1) + 's' : '—'}</td>
+      </tr>`).join('')
+    }
+  } catch {}
+}
+
+// ===== Evolution =====
+async function updateEvoMetrics() {
+  try {
+    const r = await fetch(`${API_BASE}/api/evolution`)
+    const j = await r.json()
+    const m = j.metrics
+    if (!m) { $('#evoMetrics').innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--text-muted)">暂无数据</td></tr>'; return }
+    $('#evoMetrics').innerHTML = `
+      <tr><td>执行次数</td><td>${m.totalExecutions ?? 0}</td></tr>
+      <tr><td>成功率</td><td style="color:${(m.successRate ?? 1) > 0.8 ? 'var(--green)' : 'var(--red)'}">${((m.successRate ?? 1) * 100).toFixed(1)}%</td></tr>
+      <tr><td>平均耗时</td><td>${((m.averageDuration ?? 0) / 1000).toFixed(1)}s</td></tr>
+      <tr><td>优化次数</td><td>${m.optimizationApplied ?? 0}</td></tr>
+      <tr><td>失败模式</td><td>${(m.failurePatterns || []).length} 个</td></tr>
+    `
+  } catch {}
+}
+
+// ===== Config =====
+async function loadConfig() {
+  try {
+    const r = await fetch(`${API_BASE}/api/config`)
+    const j = await r.json()
+    STATE.config = j.data || {}
+
+    const cfg = STATE.config
+    const srv = cfg.server || {}
+    const mon = cfg.monitor || {}
+    const tsk = cfg.tasks || {}
+    const wc = cfg.channels?.wechat || {}
+
+    // Populate config form
+    $('#cfg-hostname').value = srv.hostname || ''
+    $('#cfg-port').value = srv.port || ''
+    $('#cfg-api-port').value = srv.apiPort || ''
+    $('#cfg-webhook-port').value = (cfg.channels?.webhook?.port) || ''
+    $('#cfg-loglevel').value = srv.logLevel || 'info'
+    $('#cfg-opencode-binary').value = srv.opencodeBinary || ''
+    $('#cfg-autorestart').value = String(srv.autoRestart ?? true)
+    $('#cfg-maxrestarts').value = srv.maxRestarts ?? 3
+    $('#cfg-monitor-interval').value = mon.intervalMs || ''
+    $('#cfg-logmaxfiles').value = mon.logMaxFiles ?? 7
+    $('#cfg-watchdog').value = String(!!mon.watchdogEnabled)
+
+    // Load agents
+    const ar = await fetch(`${API_BASE}/api/agents`)
+    const aj = await ar.json()
+    STATE.agents = aj.available || []
+    const curAgent = aj.default || tsk.defaultAgent || 'sisyphus-junior'
+    const sel = $('#cfg-default-agent')
+    sel.innerHTML = STATE.agents.map(a => `<option value="${a}" ${a === curAgent ? 'selected' : ''}>${a}</option>`).join('')
+
+    // WeChat form
+    $('#wc-enabled').value = String(!!wc.enabled)
+    $('#wc-mode').value = wc.mode || 'webhook'
+    $('#wc-gateway-url').value = wc.gatewayUrl || ''
+    $('#wc-gateway-token').value = ''  // masked from API
+    $('#wc-callback-url').value = wc.callbackUrl || ''
+
+    toast('配置已加载', 'success')
+  } catch (e) {
+    toast('加载配置失败: ' + e.message, 'error')
+  }
+}
+
+async function saveConfig() {
+  const partial = {
+    server: {
+      hostname: $('#cfg-hostname').value || '127.0.0.1',
+      port: parseInt($('#cfg-port').value) || 51899,
+      apiPort: parseInt($('#cfg-api-port').value) || 51898,
+      logLevel: $('#cfg-loglevel').value,
+      opencodeBinary: $('#cfg-opencode-binary').value || 'opencode',
+      autoRestart: $('#cfg-autorestart').value === 'true',
+      maxRestarts: parseInt($('#cfg-maxrestarts').value) || 3,
+    },
+    channels: {
+      webhook: {
+        port: parseInt($('#cfg-webhook-port').value) || 51897,
+      },
+    },
+    monitor: {
+      intervalMs: parseInt($('#cfg-monitor-interval').value) || 30000,
+      logMaxFiles: parseInt($('#cfg-logmaxfiles').value) || 7,
+      watchdogEnabled: $('#cfg-watchdog').value === 'true',
+    },
+    tasks: {
+      defaultAgent: $('#cfg-default-agent').value,
+    },
+  }
+  try {
+    const r = await fetch(`${API_BASE}/api/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(partial),
+    })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    toast('配置已保存', 'success')
+  } catch (e) {
+    toast('保存配置失败: ' + e.message, 'error')
+  }
+}
+
+async function saveWechatConfig() {
+  const partial = {
+    channels: {
+      wechat: {
+        enabled: $('#wc-enabled').value === 'true',
+        mode: $('#wc-mode').value,
+        gatewayUrl: $('#wc-gateway-url').value || undefined,
+        gatewayToken: $('#wc-gateway-token').value || undefined,
+        callbackUrl: $('#wc-callback-url').value || undefined,
+      },
+    },
+  }
+  try {
+    const r = await fetch(`${API_BASE}/api/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(partial),
+    })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    toast('微信配置已保存', 'success')
+  } catch (e) {
+    toast('保存微信配置失败: ' + e.message, 'error')
+  }
+}
+
+// ===== Exec Viewport (watch SSE logs + filter) =====
+// Filter log entries that look like execution output
+function appendExecLine(text, cls = 'stdout') {
+  const vp = $('#execViewport')
+  const line = document.createElement('div')
+  line.className = `exec-line ${cls}`
+  line.innerHTML = text
+  vp.appendChild(line)
+  vp.scrollTop = vp.scrollHeight
+  // Limit lines
+  while (vp.children.length > 500) vp.removeChild(vp.firstChild)
+}
+
+// ===== Toast =====
+let toastTimer = null
+function toast(msg, type = 'success') {
+  const el = $('#toast')
+  el.textContent = msg
+  el.className = `toast ${type} show`
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000)
+}
+
+// ===== Utility =====
+function escapeHtml(s) {
+  if (!s) return ''
+  const d = document.createElement('div')
+  d.textContent = s
+  return d.innerHTML
+}
+
+// ===== Periodic Polling =====
+setInterval(() => {
+  if (!STATE.sseConnected) {
+    // Fallback polling
+    fetch(`${API_BASE}/api/status`).then(r => r.json()).then(renderDashboard).catch(() => {})
+  }
+  updateRecentExecs()
+}, 10000)
+
+// ===== Init =====
+connectSSE()
+updateTasks()
+updateRecentExecs()
+updateEvoMetrics()
+loadConfig()
+
+// Watch logs for exec viewport (filter execution-related entries)
+// This watches the global log buffer
+setInterval(() => {
+  const recent = STATE.logs.slice(-10)
+  for (const e of recent) {
+    const lower = e.msg.toLowerCase()
+    if (e._rendered) continue
+    e._rendered = true
+    if (lower.includes('executing') || lower.includes('task') || lower.includes('completed') || lower.includes('failed') || lower.includes('error') || lower.includes('starting') || lower.includes('step')) {
+      const cls = e.level === 'error' ? 'stderr' : e.level === 'warn' ? 'stderr' : 'stdout'
+      appendExecLine(`<span class="ts">[${e.time.slice(11,19)}]</span> ${escapeHtml(e.msg)}`, cls)
+    }
+  }
+}, 1000)
+
+console.log('PCbot Web UI initialized')
+</script>
+</body>
+</html>

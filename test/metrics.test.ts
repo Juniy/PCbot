@@ -1,11 +1,22 @@
-import { expect, test, beforeEach, describe } from "bun:test"
+import { expect, test, beforeEach, afterAll, describe } from "bun:test"
 import { MetricsCollector } from "../src/monitor/metrics"
 import { TaskStore } from "../src/engine/store"
 import { ServerManager } from "../src/server/manager"
 import { OpenCodeClient } from "../src/client"
 import { HealthMonitor } from "../src/monitor"
 import { updateConfig } from "../src/config"
+import * as fs from "fs"
+import * as path from "path"
 import type { TaskExecution } from "../src/types"
+
+const tempFiles: string[] = []
+
+afterAll(() => {
+  // Clean up temp store files
+  for (const f of tempFiles) {
+    try { fs.unlinkSync(f) } catch { /* ignore */ }
+  }
+})
 
 let metrics: MetricsCollector
 let store: TaskStore
@@ -13,8 +24,10 @@ let healthMonitor: HealthMonitor
 
 beforeEach(() => {
   // Use unique store path per test to avoid cross-test pollution
+  const storePath = `data/test-metrics-${Date.now()}-${Math.random()}.json`
+  tempFiles.push(path.resolve(storePath))
   updateConfig({
-    tasks: { storePath: `data/test-metrics-${Date.now()}-${Math.random()}.json` },
+    tasks: { storePath },
   })
   store = new TaskStore()
   // HealthMonitor needs ServerManager + OpenCodeClient
@@ -100,14 +113,15 @@ test("MetricsCollector records server restarts", () => {
 
 test("MetricsCollector reads from TaskStore for real-time data", () => {
   // Add executions to the store
+  const now = new Date().toISOString()
   const exec1 = {
     id: "e1",
     taskId: "t1",
     status: "completed" as const,
     startedAt: new Date(Date.now() - 5000).toISOString(),
-    completedAt: new Date().toISOString(),
+    completedAt: now,
     currentStep: 1,
-    stepResults: [{ stepId: "s1", status: "success" as const, duration: 100, output: "ok" }],
+    stepResults: [{ stepId: "s1", status: "success" as const, duration: 100, output: "ok", startedAt: now }],
     retryCount: 0,
   }
   const exec2 = {
@@ -115,9 +129,9 @@ test("MetricsCollector reads from TaskStore for real-time data", () => {
     taskId: "t2",
     status: "failed" as const,
     startedAt: new Date(Date.now() - 3000).toISOString(),
-    completedAt: new Date().toISOString(),
+    completedAt: now,
     currentStep: 1,
-    stepResults: [{ stepId: "s1", status: "failure" as const, duration: 50, output: "err", error: "fail" }],
+    stepResults: [{ stepId: "s1", status: "failed" as const, duration: 50, output: "err", error: "fail", startedAt: now }],
     retryCount: 1,
   }
   store.addExecution(exec1)

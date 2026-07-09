@@ -53,8 +53,8 @@ export class DiagnosticEngine {
       const failedStep = exec.stepResults.find((s) => s.status === "failed")
       const prompt = this.buildDiagnosticPrompt(exec, task, failedStep)
 
-      const result = await this.client.v2CreateSession()
-      const sessionId = result.data?.id ?? (result as any).id
+      const result = await this.client.v2CreateSession({ agentID: "oracle" })
+      const sessionId = result.data.id
       if (!sessionId) throw new Error("Failed to create diagnostic session")
 
       const response = await this.client.v2Prompt(sessionId, prompt)
@@ -100,8 +100,8 @@ export class DiagnosticEngine {
         `Only respond with valid JSON, no explanation.`,
       ].join("\n")
 
-      const session = await this.client.v2CreateSession()
-      const sessionId = session.data?.id ?? (session as any).id
+      const session = await this.client.v2CreateSession({ agentID: "hephaestus" })
+      const sessionId = session.data.id
       if (!sessionId) throw new Error("Failed to create fix session")
 
       const response = await this.client.v2Prompt(sessionId, prompt)

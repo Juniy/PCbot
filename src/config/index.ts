@@ -5,7 +5,8 @@ type DeepPartial<T> = T extends object ? { [P in keyof T]?: DeepPartial<T[P]> } 
 const DEFAULT_CONFIG: AppConfig = {
   server: {
     hostname: "127.0.0.1",
-    port: 4096,
+    port: 51899,
+    apiPort: 51898,
     logLevel: "info",
     opencodeBinary: "opencode",
     autoRestart: true,
@@ -16,20 +17,27 @@ const DEFAULT_CONFIG: AppConfig = {
     restartBackoffMs: [10_000, 30_000, 60_000],
     logDir: "logs",
     logMaxSize: 10 * 1024 * 1024,
+    logMaxFiles: 7,
+    watchdogEnabled: false,
   },
   channels: {
     wechat: {
       enabled: false,
+      mode: "webhook",
+      gatewayUrl: "",
+      gatewayToken: "",
+      callbackUrl: "http://localhost:8080/api/channels/wechat",
     },
     webhook: {
       enabled: false,
-      port: 8080,
+      port: 51897,
     },
   },
   tasks: {
     storePath: "data/tasks.json",
     maxHistory: 1000,
     defaultTimeout: 300_000,
+    defaultAgent: "sisyphus-junior",
   },
 }
 

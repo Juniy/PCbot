@@ -83,8 +83,8 @@ export class ResultValidator {
         `SUGGESTIONS: comma-separated list or "none"`,
       ].join("\n")
 
-      const session = await this.client.v2CreateSession()
-      const sessionId = session.data?.id ?? (session as any).id
+      const session = await this.client.v2CreateSession({ agentID: "momus" })
+      const sessionId = session.data.id
       if (!sessionId) throw new Error("Failed to create validation session")
 
       const response = await this.client.v2Prompt(sessionId, prompt)

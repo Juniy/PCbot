@@ -1,10 +1,14 @@
-import type { z } from "zod"
-
 // ===== 任务系统类型 =====
 
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled"
 
 export type StepType = "prompt" | "session_command" | "file_operation" | "shell_command" | "webhook" | "condition"
+
+/** OMO agent IDs available from oh-my-openagent plugin */
+export type AgentID =
+  | "sisyphus" | "hephaestus" | "oracle" | "explore"
+  | "multimodal-looker" | "prometheus" | "metis" | "momus"
+  | "atlas" | "sisyphus-junior" | "build"
 
 export interface TaskStep {
   id: string
@@ -23,6 +27,8 @@ export interface TaskStep {
   /** File operation specific */
   filePath?: string
   fileContent?: string
+  /** OMO agent override for this step (overrides task-level default) */
+  agentID?: AgentID
 }
 
 export interface TaskDefinition {
@@ -37,6 +43,8 @@ export interface TaskDefinition {
   createdAt: string
   updatedAt: string
   tags?: string[]
+  /** Default OMO agent for all steps (per-step agentID overrides this) */
+  agentID?: AgentID
 }
 
 export interface TaskExecution {
@@ -106,7 +114,10 @@ export interface AlertRule {
 export interface AppConfig {
   server: {
     hostname: string
+    /** OpenCode server port */
     port: number
+    /** PCbot HTTP API server port */
+    apiPort: number
     logLevel: "debug" | "info" | "warn" | "error"
     opencodeBinary: string
     autoRestart: boolean
@@ -117,10 +128,22 @@ export interface AppConfig {
     restartBackoffMs: number[]
     logDir: string
     logMaxSize: number
+    /** Max rotated log files to keep (0 = unlimited) */
+    logMaxFiles: number
+    /** Enable self-watchdog process monitor */
+    watchdogEnabled: boolean
   }
   channels: {
     wechat?: {
       enabled: boolean
+      /** Gateway mode: "webhook" | "proxy" | "work-wechat" */
+      mode?: "webhook" | "proxy" | "work-wechat"
+      /** Third-party gateway URL (e.g. http://localhost:9090) */
+      gatewayUrl?: string
+      /** Gateway auth token */
+      gatewayToken?: string
+      /** Callback URL for the gateway to POST to */
+      callbackUrl?: string
     }
     webhook?: {
       enabled: boolean
@@ -131,5 +154,7 @@ export interface AppConfig {
     storePath: string
     maxHistory: number
     defaultTimeout: number
+    /** Default agent for task execution (from oh-my-openagent) */
+    defaultAgent?: string
   }
 }

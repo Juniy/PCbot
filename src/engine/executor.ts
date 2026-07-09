@@ -2,10 +2,47 @@ import { ulid } from "./ulid"
 import { OpenCodeClient } from "../client"
 import { Logger } from "../monitor/logger"
 import { TaskStore } from "./store"
-import type { TaskDefinition, TaskExecution, TaskStep, StepResult, TaskStatus } from "../types"
+import type { TaskDefinition, TaskExecution, TaskStep, StepResult, TaskStatus, AgentID, StepType } from "../types"
 import { getConfig } from "../config"
 
 export type TaskEventCallback = (event: { type: "start" | "complete" | "fail"; exec: TaskExecution; task?: TaskDefinition }) => void
+
+/**
+ * Step type → OMO agent mapping
+ * Selects the optimal agent from oh-my-openagent based on step purpose.
+ * Map keys are step types; values are agent IDs from oh-my-openagent.json.
+ */
+const STEP_AGENT_MAP: Partial<Record<StepType, AgentID>> = {
+  prompt: "sisyphus-junior",
+  session_command: "sisyphus-junior",
+  shell_command: "hephaestus",
+  file_operation: "hephaestus",
+  webhook: "build",
+  condition: "build",
+}
+
+/** Higher-level task purpose → agent overrides (used by router/decomposer) */
+export const TASK_AGENT_MAP: Record<string, AgentID> = {
+  analyze: "explore",
+  research: "explore",
+  plan: "prometheus",
+  design: "atlas",
+  review: "momus",
+  diagnose: "oracle",
+  execute: "sisyphus-junior",
+}
+
+function pickAgent(task: TaskDefinition, step: TaskStep): string | undefined {
+  // 1. Per-step override
+  if (step.agentID) return step.agentID
+  // 2. Task-level default
+  if (task.agentID) return task.agentID
+  // 3. Step type mapping
+  const mapped = STEP_AGENT_MAP[step.type]
+  if (mapped) return mapped
+  // 4. Config default
+  return getConfig().tasks.defaultAgent
+}
 
 export class TaskExecutor {
   private client: OpenCodeClient
@@ -118,7 +155,7 @@ export class TaskExecutor {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const timeout = step.timeout ?? task.timeout
-        const output = await this.runStepAction(step, timeout)
+        const output = await this.runStepAction(step, task, timeout)
 
         result.output = output
         result.duration = Date.now() - startTime
@@ -153,16 +190,18 @@ export class TaskExecutor {
     return result
   }
 
-  private async runStepAction(step: TaskStep, timeout: number): Promise<string> {
+  private async runStepAction(step: TaskStep, task: TaskDefinition, timeout: number): Promise<string> {
     const ac = new AbortController()
     const timeoutId = setTimeout(() => ac.abort(), timeout)
 
     try {
+      const agentId = pickAgent(task, step)
+
       switch (step.type) {
         case "prompt": {
           // Create a temp session and prompt
-          const session = await this.client.v2CreateSession()
-          const sessionId = session.data?.id ?? (session as any).id
+          const session = await this.client.v2CreateSession({ agentID: agentId })
+          const sessionId = session.data.id
           if (!sessionId) throw new Error("Failed to create session (no id returned)")
 
           const result = await this.client.v2Prompt(sessionId, step.input)
@@ -172,8 +211,8 @@ export class TaskExecutor {
 
         case "session_command": {
           // Execute within a session
-          const session = await this.client.v2CreateSession()
-          const sessionId = session.data?.id ?? (session as any).id
+          const session = await this.client.v2CreateSession({ agentID: agentId })
+          const sessionId = session.data.id
           if (!sessionId) throw new Error("Failed to create session")
 
           const result = await this.client.v2Prompt(sessionId, step.input)
@@ -190,8 +229,9 @@ export class TaskExecutor {
               maxBuffer: 10 * 1024 * 1024,
             })
             return output ?? ""
-          } catch (err: any) {
-            if (err.stdout) return err.stdout.toString()
+          } catch (err) {
+            const e = err as { stdout?: Buffer | string }
+            if (e.stdout) return e.stdout.toString()
             throw err
           }
         }

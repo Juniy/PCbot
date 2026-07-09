@@ -11,6 +11,36 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
   error: 3,
 }
 
+// ===== Global Log Buffer (for real-time streaming) =====
+export interface LogEntry {
+  time: string
+  level: LogLevel
+  logger: string
+  msg: string
+  _raw: string // JSON string for SSE
+}
+
+const MAX_BUFFER = 1000
+const logBuffer: LogEntry[] = []
+const sseClients: Set<(entry: LogEntry) => void> = new Set()
+
+export function subscribeLogs(cb: (entry: LogEntry) => void): () => void {
+  sseClients.add(cb)
+  return () => { sseClients.delete(cb) }
+}
+
+export function getRecentLogs(limit = 200): LogEntry[] {
+  return logBuffer.slice(-limit)
+}
+
+function pushLog(entry: LogEntry): void {
+  logBuffer.push(entry)
+  if (logBuffer.length > MAX_BUFFER) logBuffer.shift()
+  for (const cb of sseClients) {
+    try { cb(entry) } catch { /* ignore */ }
+  }
+}
+
 export class Logger {
   private name: string
   private logDir: string
@@ -50,16 +80,26 @@ export class Logger {
 
     const formatted = this.formatMessage(level, message)
 
-    // Console output
+    // Push to global log buffer (for SSE streaming)
+    const entry: LogEntry = {
+      time: new Date().toISOString(),
+      level,
+      logger: this.name,
+      msg: message,
+      _raw: formatted,
+    }
+    pushLog(entry)
+
+    // Console output (use _raw for consistent format)
     switch (level) {
       case "error":
-        console.error(formatted)
+        console.error(entry._raw)
         break
       case "warn":
-        console.warn(formatted)
+        console.warn(entry._raw)
         break
       default:
-        console.log(formatted)
+        console.log(entry._raw)
     }
 
     // File output
@@ -87,9 +127,26 @@ export class Logger {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
       const rotated = filePath.replace(/\.log$/, `-${timestamp}.log`)
       fs.renameSync(filePath, rotated)
+      // Enforce max log file count
+      this.cleanOldLogs()
     } catch {
       // silently fail
     }
+  }
+
+  /** Remove oldest log files exceeding maxFiles limit */
+  private cleanOldLogs(): void {
+    try {
+      const maxFiles = getConfig().monitor.logMaxFiles
+      if (maxFiles <= 0) return
+      const files = fs.readdirSync(this.logDir)
+        .filter((f) => f.startsWith("pcbot-") && f.endsWith(".log"))
+        .sort()
+        .slice(0, -maxFiles) // keep newest N
+      for (const f of files) {
+        try { fs.unlinkSync(path.join(this.logDir, f)) } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
   }
 
   debug(message: string): void {
@@ -109,5 +166,4 @@ export class Logger {
   }
 }
 
-// Global error logger
-export const globalLogger = new Logger("system")
+

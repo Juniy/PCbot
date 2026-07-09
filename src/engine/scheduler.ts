@@ -40,39 +40,6 @@ export function matchCron(expression: string, date: Date = new Date()): boolean 
   )
 }
 
-function simpleCronMatch(expression: string, date: Date): boolean {
-  const parts = expression.trim().split(/\s+/)
-  if (parts.length !== 5) return false
-
-  const [min, hour, dom, mon, dow] = parts
-
-  const matchField = (field: string, value: number): boolean => {
-    if (field === "*") return true
-    if (field.startsWith("*/")) {
-      const step = parseInt(field.slice(2), 10)
-      if (isNaN(step)) return false
-      return value % step === 0
-    }
-    if (field.includes(",")) {
-      return field.split(",").map(Number).includes(value)
-    }
-    if (field.includes("-")) {
-      const [lo, hi] = field.split("-").map(Number)
-      if (lo === undefined || hi === undefined) return false
-      return value >= lo && value <= hi
-    }
-    return parseInt(field, 10) === value
-  }
-
-  return (
-    matchField(min!, date.getMinutes()) &&
-    matchField(hour!, date.getHours()) &&
-    matchField(dom!, date.getDate()) &&
-    matchField(mon!, date.getMonth() + 1) &&
-    matchField(dow!, date.getDay())
-  )
-}
-
 export class TaskScheduler {
   private store: TaskStore
   private executor: TaskExecutor

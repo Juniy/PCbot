@@ -4,7 +4,9 @@ import { loadConfig, getConfig, updateConfig } from "../src/config"
 test("loadConfig returns defaults", () => {
   const cfg = loadConfig()
   expect(cfg.server.hostname).toBe("127.0.0.1")
-  expect(cfg.server.port).toBe(4096)
+  expect(cfg.server.port).toBe(51899)
+  expect(cfg.server.apiPort).toBe(51898)
+  expect(cfg.channels.webhook?.port).toBe(51897)
   expect(cfg.monitor.intervalMs).toBe(30000)
 })
 

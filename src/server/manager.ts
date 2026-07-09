@@ -118,21 +118,24 @@ export class ServerManager {
       })
 
       // Timeout: if no listening signal within 30s, fail
-      const timeout = setTimeout(() => {
-        if (this.url === null) {
+      let settled = false
+      const timeoutId = setTimeout(() => {
+        if (!settled) {
+          settled = true
           this.stop()
           reject(new Error(`Server failed to start within 30s.\nOutput: ${output}`))
         }
       }, 30_000)
 
-      // Clear timeout on resolve/reject
+      // Wrap resolve/reject to clear timeout
       const origResolve = resolve
-      const origReject = reject
-      const wrapperReject = (err: Error) => {
-        clearTimeout(timeout)
-        origReject(err)
+      ;(resolve as (val: string) => void) = (val: string) => {
+        if (!settled) { settled = true; clearTimeout(timeoutId); origResolve(val) }
       }
-      // Can't easily replace, but reject will be called before timeout
+      const origReject = reject
+      ;(reject as (err: Error) => void) = (err: Error) => {
+        if (!settled) { settled = true; clearTimeout(timeoutId); origReject(err) }
+      }
     })
   }
 
