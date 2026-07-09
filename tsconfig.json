@@ -11,14 +11,12 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "isolatedModules": true,
-    "erasableSyntaxOnly": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "declaration": false,
     "outDir": "dist",
-    "rootDir": "src",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]

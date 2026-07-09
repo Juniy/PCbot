@@ -1,5 +1,7 @@
 import type { AppConfig } from "../types"
 
+type DeepPartial<T> = T extends object ? { [P in keyof T]?: DeepPartial<T[P]> } : T
+
 const DEFAULT_CONFIG: AppConfig = {
   server: {
     hostname: "127.0.0.1",
@@ -36,7 +38,7 @@ let currentConfig: AppConfig = { ...DEFAULT_CONFIG }
 /**
  * Deep merge partial config into defaults
  */
-export function loadConfig(partial?: Partial<AppConfig>): AppConfig {
+export function loadConfig(partial?: DeepPartial<AppConfig>): AppConfig {
   if (partial) {
     currentConfig = deepMerge(DEFAULT_CONFIG, partial) as AppConfig
   }
@@ -47,7 +49,7 @@ export function getConfig(): AppConfig {
   return currentConfig
 }
 
-export function updateConfig(partial: Partial<AppConfig>): AppConfig {
+export function updateConfig(partial: DeepPartial<AppConfig>): AppConfig {
   currentConfig = deepMerge(currentConfig, partial) as AppConfig
   return currentConfig
 }

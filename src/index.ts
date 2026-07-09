@@ -18,6 +18,9 @@ import { ChannelManager } from "./channels"
 import { WebhookChannel } from "./channels/webhook"
 import { WeChatChannel } from "./channels/wechat"
 import { EvolutionEngine } from "./engine/evolution"
+import { TaskRouter } from "./engine/router"
+import { HttpApiServer } from "./server/http-api"
+import type { ChannelMessage } from "./types"
 
 const logger = new Logger("main")
 
@@ -28,8 +31,10 @@ interface PcbotOptions {
   wechatApiUrl?: string
   wechatToken?: string
   webhookPort?: number
+  apiPort?: number
   enableWebhook?: boolean
   enableWechat?: boolean
+  enableApi?: boolean
 }
 
 export class Pcbot {
@@ -41,10 +46,14 @@ export class Pcbot {
   private healthMonitor: HealthMonitor
   private channelManager: ChannelManager
   private evolutionEngine: EvolutionEngine
+  private taskRouter!: TaskRouter
+  private httpApi!: HttpApiServer
   private startTime = 0
   private running = false
+  private options: PcbotOptions
 
   constructor(options?: PcbotOptions) {
+    this.options = options ?? {}
     if (options?.config) {
       loadConfig(options.config as any)
     }
@@ -90,42 +99,69 @@ export class Pcbot {
       throw err
     }
 
-    // 2. Start channels
+    // 2. Initialize task router (connects channels to tasks)
+    this.taskRouter = new TaskRouter(this.taskStore, this.taskExecutor, this.channelManager)
+    this.setupChannelRouting()
+
+    // 3. Start channels
     await this.startChannels()
 
-    // 3. Start scheduler
+    // 4. Start HTTP API server (task management UI)
+    if (this.options.enableApi !== false) {
+      this.httpApi = new HttpApiServer(
+        this.taskStore,
+        this.taskExecutor,
+        this.taskRouter,
+        this.evolutionEngine,
+        this.healthMonitor,
+        this.serverManager,
+        this.channelManager,
+        this.options.apiPort ?? 8081,
+      )
+      await this.httpApi.start()
+    }
+
+    // 5. Start scheduler
     this.taskScheduler.start()
 
-    // 4. Start health monitor
+    // 6. Start health monitor
     this.healthMonitor.start()
 
-    // 5. Start evolution engine
+    // 7. Start evolution engine
     this.evolutionEngine.start()
 
     logger.info("=== PCbot Started ===")
     this.printStatus()
   }
 
-  private async startChannels(): Promise<void> {
-    const cfg = getConfig().channels
+  private setupChannelRouting(): void {
+    // Route webhook messages to tasks
+    const webhook = new WebhookChannel(this.options.webhookPort ?? 8080)
+    webhook.onMessage((msg) => {
+      this.taskRouter.route(msg).catch((err) => {
+        logger.error(`Route error: ${(err as Error).message}`)
+      })
+    })
+    this.channelManager.register("webhook", webhook)
 
-    // Webhook channel
-    if (cfg.webhook?.enabled) {
-      const webhookPort = cfg.webhook.port
-      const webhook = new WebhookChannel(webhookPort)
-      this.channelManager.register("webhook", webhook)
-      logger.info(`Webhook channel enabled on port ${webhookPort}`)
-    }
-
-    // WeChat channel (via webhook integration)
-    if (cfg.wechat?.enabled) {
-      const wechat = new WeChatChannel()
+    // Route WeChat messages to tasks
+    if (this.options.enableWechat || getConfig().channels.wechat?.enabled) {
+      const wechat = new WeChatChannel({
+        apiUrl: this.options.wechatApiUrl,
+        token: this.options.wechatToken,
+      })
+      wechat.onMessage((msg) => {
+        this.taskRouter.route(msg).catch((err) => {
+          logger.error(`WeChat route error: ${(err as Error).message}`)
+        })
+      })
       this.channelManager.register("wechat", wechat)
-      logger.info("WeChat channel enabled")
     }
+  }
 
-    // Start all registered channels
+  private async startChannels(): Promise<void> {
     await this.channelManager.startAll()
+    logger.info(`Channels started: ${["stdout", "webhook", this.options.enableWechat ? "wechat" : ""].filter(Boolean).join(", ")}`)
   }
 
   async stop(): Promise<void> {
@@ -135,7 +171,9 @@ export class Pcbot {
     this.evolutionEngine.stop()
     this.healthMonitor.stop()
     this.taskScheduler.stop()
+    this.taskExecutor.cancelAll()
 
+    if (this.httpApi) await this.httpApi.stop()
     await this.channelManager.stopAll()
     await this.serverManager.stop()
 
@@ -160,7 +198,8 @@ export class Pcbot {
 │ 运行时间: ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}
 │ Server:    ${this.serverManager.isRunning ? "✅ 运行中" : "❌ 已停止"}
 │ Server URL: ${this.serverManager.serverUrl ?? "-"}
-│ API:       ${this.client.isConfigured ? "✅ 已配置" : "⏳ 等待连接"}
+│ API客户端: ${this.client.isConfigured ? "✅ 已配置" : "⏳ 等待连接"}
+│ HTTP API:  ${this.httpApi ? "✅ 运行中 (port 8081)" : "⏹ 未启用"}
 │ 任务引擎:  ${this.taskExecutor.isRunning ? `▶ 执行中 (${this.taskExecutor.runningCount})` : "⏸ 空闲"}
 │ 任务总数:  ${this.taskStore.getAllTasks().length}
 │ 调度器:    ${this.taskScheduler ? "✅ 运行中" : "⏹ 已停止"}
@@ -170,33 +209,15 @@ export class Pcbot {
 └──────────────────────────────────────────────┘`)
   }
 
-  getServerManager(): ServerManager {
-    return this.serverManager
-  }
-
-  getClient(): OpenCodeClient {
-    return this.client
-  }
-
-  getTaskStore(): TaskStore {
-    return this.taskStore
-  }
-
-  getTaskExecutor(): TaskExecutor {
-    return this.taskExecutor
-  }
-
-  getHealthMonitor(): HealthMonitor {
-    return this.healthMonitor
-  }
-
-  getChannelManager(): ChannelManager {
-    return this.channelManager
-  }
-
-  getEvolutionEngine(): EvolutionEngine {
-    return this.evolutionEngine
-  }
+  getServerManager(): ServerManager { return this.serverManager }
+  getClient(): OpenCodeClient { return this.client }
+  getTaskStore(): TaskStore { return this.taskStore }
+  getTaskExecutor(): TaskExecutor { return this.taskExecutor }
+  getHealthMonitor(): HealthMonitor { return this.healthMonitor }
+  getChannelManager(): ChannelManager { return this.channelManager }
+  getEvolutionEngine(): EvolutionEngine { return this.evolutionEngine }
+  getTaskRouter(): TaskRouter { return this.taskRouter }
+  getHttpApi(): HttpApiServer { return this.httpApi }
 }
 
 // ===== CLI Entry =====
@@ -208,6 +229,8 @@ async function main() {
     const bot = new Pcbot({
       enableWebhook: true,
       webhookPort: 8080,
+      enableApi: true,
+      apiPort: 8081,
     })
 
     // Handle graceful shutdown
@@ -223,20 +246,26 @@ async function main() {
 
     await bot.start()
 
+    console.log("\n📡 API Endpoints:")
+    console.log("  POST http://localhost:8080/webhook  — Send message to process")
+    console.log("  POST http://localhost:8081/api/chat  — Chat-style task creation")
+    console.log("  GET  http://localhost:8081/api/status — System status")
+    console.log("  GET  http://localhost:8081/api/tasks  — List tasks")
+    console.log("  GET  http://localhost:8081/api/evolution — Evolution metrics")
+    console.log("")
+
     // Keep alive
     setInterval(() => {
       bot.printStatus()
     }, 60_000)
   } else {
-    // Quick test mode: just verify config and connectivity
+    // Quick test mode
     const bot = new Pcbot()
     console.log("PCbot initialized. Run with --serve to start the full system.")
     console.log(`Tasks stored at: ${getConfig().tasks.storePath}`)
     console.log(`Log directory: ${getConfig().monitor.logDir}`)
-
-    // Show example task creation
-    console.log("\nExample: Create a task via API")
-    console.log("  POST http://localhost:8080/webhook with JSON body { \"content\": \"your prompt\" }")
+    console.log("\nQuick start:")
+    console.log("  bun run dev --serve")
   }
 }
 
