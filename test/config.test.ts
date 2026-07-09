@@ -1,0 +1,20 @@
+import { expect, test } from "bun:test"
+import { loadConfig, getConfig, updateConfig } from "../src/config"
+
+test("loadConfig returns defaults", () => {
+  const cfg = loadConfig()
+  expect(cfg.server.hostname).toBe("127.0.0.1")
+  expect(cfg.server.port).toBe(4096)
+  expect(cfg.monitor.intervalMs).toBe(30000)
+})
+
+test("loadConfig merges partial config", () => {
+  const cfg = loadConfig({ server: { port: 9999 } })
+  expect(cfg.server.port).toBe(9999)
+  expect(cfg.server.hostname).toBe("127.0.0.1") // unchanged
+})
+
+test("updateConfig overrides values", () => {
+  updateConfig({ server: { logLevel: "debug" } })
+  expect(getConfig().server.logLevel).toBe("debug")
+})

@@ -43,3 +43,10 @@ out/
 
 # Docs (external API specs, references)
 doc/
+
+# Runtime data
+data/
+logs/
+
+# Lockfiles (platform-specific)
+bun.lock
