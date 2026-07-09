@@ -40,3 +40,6 @@ logs/
 dist/
 build/
 out/
+
+# Docs (external API specs, references)
+doc/
